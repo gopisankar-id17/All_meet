@@ -26,7 +26,7 @@ const status = document.getElementById('status');
 
 // Generate random room ID
 function generateRoomId() {
-    return 'room-' + Math.random().toString(36).substring(2, 10).toUpperCase();
+    return 'ROOM-' + Math.random().toString(36).substring(2, 10).toUpperCase();
 }
 
 // Initialize peer connection
@@ -35,7 +35,7 @@ function initializePeer(roomId, isCreator = false) {
     
     // Use the cloud PeerJS server
     peer = new Peer(roomId, {
-        host: '0.peerjs.com',
+        host: 'peerjs.com',
         secure: true,
         port: 443,
         debug: 2,
@@ -264,9 +264,9 @@ createRoomBtn.addEventListener('click', async () => {
 
 // Join room
 joinRoomBtn.addEventListener('click', async () => {
-    const roomId = roomIdInput.value.trim();
+    const targetRoomId = roomIdInput.value.trim().toUpperCase();
     
-    if (!roomId) {
+    if (!targetRoomId) {
         alert('⚠️ Please enter a Room ID');
         return;
     }
@@ -275,16 +275,17 @@ joinRoomBtn.addEventListener('click', async () => {
     
     if (mediaReady) {
         showCallScreen();
-        displayRoomId.textContent = roomId;
         
-        // Generate a unique ID for ourselves
+        // Generate a unique ID for ourselves (different from target room)
         const myId = generateRoomId();
+        displayRoomId.textContent = 'Joining: ' + targetRoomId;
+        
         initializePeer(myId, false);
         
-        // Wait for peer to be ready, then call the room
+        // Wait for peer to be ready, then call the target room
         setTimeout(() => {
             if (peer && peer.open) {
-                callPeer(roomId);
+                callPeer(targetRoomId);
             } else {
                 status.textContent = '❌ Connection failed. Please try again.';
             }
