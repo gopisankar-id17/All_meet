@@ -35,10 +35,11 @@ function initializePeer(roomId, isCreator = false) {
     
     // Use the cloud PeerJS server
     peer = new Peer(roomId, {
-        host: 'peerjs.com',
-        secure: true,
-        port: 443,
-        debug: 2,
+        host: 'localhost',  // or your server IP/domain
+    port: 9000,
+    path: '/',
+    secure: false,  // true if using HTTPS
+    debug: 2,
         config: {
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
