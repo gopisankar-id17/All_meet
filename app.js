@@ -6,6 +6,7 @@ let myPeerId;
 let remotePeerId;
 let audioEnabled = true;
 let videoEnabled = true;
+let isInitiator = false;
 
 // DOM Elements
 const joinScreen = document.getElementById('joinScreen');
@@ -25,20 +26,24 @@ const status = document.getElementById('status');
 
 // Generate random room ID
 function generateRoomId() {
-    return Math.random().toString(36).substring(2, 8).toUpperCase();
+    return 'room-' + Math.random().toString(36).substring(2, 10).toUpperCase();
 }
 
 // Initialize peer connection
-function initializePeer(roomId) {
+function initializePeer(roomId, isCreator = false) {
+    isInitiator = isCreator;
+    
+    // Use the cloud PeerJS server
     peer = new Peer(roomId, {
         host: '0.peerjs.com',
-        port: 443,
-        path: '/',
         secure: true,
+        port: 443,
+        debug: 2,
         config: {
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' }
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' }
             ]
         }
     });
@@ -46,110 +51,188 @@ function initializePeer(roomId) {
     peer.on('open', (id) => {
         myPeerId = id;
         displayRoomId.textContent = id;
-        status.textContent = 'Connected - Share your Room ID to start';
         console.log('My peer ID:', id);
+        
+        if (isCreator) {
+            status.textContent = '✅ Room created! Share the Room ID to start calling';
+        } else {
+            status.textContent = '🔄 Connected! Attempting to call...';
+            // If joining, wait a bit then try to call
+            setTimeout(() => {
+                if (!currentCall) {
+                    status.textContent = '❌ Room not found or host not ready. Please check the Room ID.';
+                }
+            }, 5000);
+        }
     });
 
     peer.on('call', (call) => {
-        console.log('Receiving call...');
-        status.textContent = 'Incoming call...';
+        console.log('📞 Receiving call from:', call.peer);
+        status.textContent = '📞 Incoming call...';
         
         // Answer the call with local stream
         call.answer(localStream);
         currentCall = call;
 
         call.on('stream', (remoteStream) => {
-            console.log('Received remote stream');
+            console.log('📺 Received remote stream');
             remoteVideo.srcObject = remoteStream;
             remotePlaceholder.style.display = 'none';
-            status.textContent = 'Connected - Call in progress';
+            status.textContent = '✅ Connected - Call in progress';
         });
 
         call.on('close', () => {
-            console.log('Call ended');
-            endCall();
+            console.log('📴 Call ended by peer');
+            handleCallEnd();
         });
 
         call.on('error', (err) => {
-            console.error('Call error:', err);
-            status.textContent = 'Call error: ' + err.message;
+            console.error('❌ Call error:', err);
+            status.textContent = '❌ Call error: ' + err.type;
         });
     });
 
     peer.on('error', (err) => {
-        console.error('Peer error:', err);
-        status.textContent = 'Connection error: ' + err.type;
+        console.error('❌ Peer error:', err);
         
         if (err.type === 'unavailable-id') {
-            status.textContent = 'Room ID already in use. Please try another.';
+            status.textContent = '❌ This Room ID is already taken. Try creating a new room.';
             setTimeout(() => {
                 showJoinScreen();
-            }, 2000);
+            }, 3000);
+        } else if (err.type === 'peer-unavailable') {
+            status.textContent = '❌ Cannot connect. The room might not exist or host left.';
+        } else if (err.type === 'network') {
+            status.textContent = '❌ Network error. Check your internet connection.';
+        } else if (err.type === 'server-error') {
+            status.textContent = '❌ Server error. Please try again in a moment.';
+        } else {
+            status.textContent = '❌ Connection error: ' + err.type;
         }
     });
 
     peer.on('disconnected', () => {
-        console.log('Peer disconnected');
-        status.textContent = 'Disconnected from server';
+        console.log('⚠️ Peer disconnected from server');
+        status.textContent = '⚠️ Disconnected. Attempting to reconnect...';
+        
+        // Try to reconnect
+        setTimeout(() => {
+            if (peer.destroyed) return;
+            peer.reconnect();
+        }, 2000);
+    });
+
+    peer.on('close', () => {
+        console.log('🔴 Peer connection closed');
+        status.textContent = 'Connection closed';
     });
 }
 
 // Initialize local media stream
 async function initializeMedia() {
     try {
+        status.textContent = '📹 Requesting camera and microphone access...';
+        
         localStream = await navigator.mediaDevices.getUserMedia({
-            video: { width: 1280, height: 720 },
-            audio: true
+            video: {
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+                facingMode: 'user'
+            },
+            audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true
+            }
         });
         
         localVideo.srcObject = localStream;
-        status.textContent = 'Media ready - Connecting...';
+        status.textContent = '✅ Media ready';
         return true;
     } catch (err) {
-        console.error('Error accessing media devices:', err);
-        status.textContent = 'Error: Could not access camera/microphone';
-        alert('Please allow camera and microphone access to use this app.');
+        console.error('❌ Error accessing media devices:', err);
+        
+        if (err.name === 'NotAllowedError') {
+            status.textContent = '❌ Camera/microphone access denied. Please allow permissions.';
+            alert('Please allow camera and microphone access to use this app.\n\nGo to browser settings and enable permissions.');
+        } else if (err.name === 'NotFoundError') {
+            status.textContent = '❌ No camera or microphone found.';
+            alert('No camera or microphone detected. Please connect one and try again.');
+        } else {
+            status.textContent = '❌ Error: Could not access camera/microphone';
+            alert('Error accessing media devices: ' + err.message);
+        }
         return false;
     }
 }
 
 // Make a call to another peer
 function callPeer(remotePeerId) {
-    console.log('Calling peer:', remotePeerId);
-    status.textContent = 'Calling...';
+    console.log('📞 Calling peer:', remotePeerId);
+    status.textContent = '📞 Calling...';
     
-    const call = peer.call(remotePeerId, localStream);
-    currentCall = call;
+    // Add delay to ensure peer is ready
+    setTimeout(() => {
+        try {
+            const call = peer.call(remotePeerId, localStream);
+            
+            if (!call) {
+                status.textContent = '❌ Failed to initiate call. Room might not exist.';
+                return;
+            }
+            
+            currentCall = call;
 
-    call.on('stream', (remoteStream) => {
-        console.log('Received remote stream');
-        remoteVideo.srcObject = remoteStream;
-        remotePlaceholder.style.display = 'none';
-        status.textContent = 'Connected - Call in progress';
-    });
+            call.on('stream', (remoteStream) => {
+                console.log('📺 Received remote stream');
+                remoteVideo.srcObject = remoteStream;
+                remotePlaceholder.style.display = 'none';
+                status.textContent = '✅ Connected - Call in progress';
+            });
 
-    call.on('close', () => {
-        console.log('Call ended');
-        endCall();
-    });
+            call.on('close', () => {
+                console.log('📴 Call closed');
+                handleCallEnd();
+            });
 
-    call.on('error', (err) => {
-        console.error('Call error:', err);
-        status.textContent = 'Failed to connect. Please check the Room ID.';
-    });
+            call.on('error', (err) => {
+                console.error('❌ Call error:', err);
+                if (err.type === 'peer-unavailable') {
+                    status.textContent = '❌ Cannot reach the room. Host might have left or Room ID is wrong.';
+                } else {
+                    status.textContent = '❌ Call failed: ' + err.type;
+                }
+            });
+        } catch (err) {
+            console.error('❌ Exception calling peer:', err);
+            status.textContent = '❌ Failed to connect. Please try again.';
+        }
+    }, 1500);
+}
+
+// Handle call end
+function handleCallEnd() {
+    if (remoteVideo.srcObject) {
+        remoteVideo.srcObject.getTracks().forEach(track => track.stop());
+        remoteVideo.srcObject = null;
+    }
+    remotePlaceholder.style.display = 'flex';
+    status.textContent = '📴 Call ended. Waiting for reconnection...';
+    currentCall = null;
 }
 
 // Show join screen
 function showJoinScreen() {
     joinScreen.classList.remove('hidden');
     callScreen.classList.add('hidden');
+    roomIdInput.value = '';
     
     // Clean up
     if (localStream) {
         localStream.getTracks().forEach(track => track.stop());
         localStream = null;
     }
-    if (peer) {
+    if (peer && !peer.destroyed) {
         peer.destroy();
         peer = null;
     }
@@ -157,6 +240,9 @@ function showJoinScreen() {
         currentCall.close();
         currentCall = null;
     }
+    
+    audioEnabled = true;
+    videoEnabled = true;
 }
 
 // Show call screen
@@ -172,16 +258,16 @@ createRoomBtn.addEventListener('click', async () => {
     
     if (mediaReady) {
         showCallScreen();
-        initializePeer(roomId);
+        initializePeer(roomId, true);
     }
 });
 
 // Join room
 joinRoomBtn.addEventListener('click', async () => {
-    const roomId = roomIdInput.value.trim().toUpperCase();
+    const roomId = roomIdInput.value.trim();
     
     if (!roomId) {
-        alert('Please enter a Room ID');
+        alert('⚠️ Please enter a Room ID');
         return;
     }
 
@@ -189,14 +275,27 @@ joinRoomBtn.addEventListener('click', async () => {
     
     if (mediaReady) {
         showCallScreen();
+        displayRoomId.textContent = roomId;
+        
         // Generate a unique ID for ourselves
         const myId = generateRoomId();
-        initializePeer(myId);
+        initializePeer(myId, false);
         
         // Wait for peer to be ready, then call the room
         setTimeout(() => {
-            callPeer(roomId);
-        }, 1000);
+            if (peer && peer.open) {
+                callPeer(roomId);
+            } else {
+                status.textContent = '❌ Connection failed. Please try again.';
+            }
+        }, 2000);
+    }
+});
+
+// Allow Enter key to join room
+roomIdInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+        joinRoomBtn.click();
     }
 });
 
@@ -204,12 +303,16 @@ joinRoomBtn.addEventListener('click', async () => {
 copyBtn.addEventListener('click', () => {
     const roomId = displayRoomId.textContent;
     navigator.clipboard.writeText(roomId).then(() => {
-        copyBtn.textContent = '✓';
+        const originalText = copyBtn.textContent;
+        copyBtn.textContent = '✓ Copied!';
+        copyBtn.style.background = 'rgba(34, 197, 94, 0.3)';
         setTimeout(() => {
-            copyBtn.textContent = '📋';
+            copyBtn.textContent = originalText;
+            copyBtn.style.background = '';
         }, 2000);
     }).catch(err => {
         console.error('Failed to copy:', err);
+        alert('Room ID: ' + roomId);
     });
 });
 
@@ -256,11 +359,24 @@ function endCall() {
         currentCall = null;
     }
     
-    remoteVideo.srcObject = null;
+    if (remoteVideo.srcObject) {
+        remoteVideo.srcObject = null;
+    }
+    
     remotePlaceholder.style.display = 'flex';
-    status.textContent = 'Call ended';
+    status.textContent = '📴 Ending call...';
     
     setTimeout(() => {
         showJoinScreen();
-    }, 1500);
+    }, 1000);
 }
+
+// Handle page unload
+window.addEventListener('beforeunload', () => {
+    if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+    }
+    if (peer) {
+        peer.destroy();
+    }
+});
