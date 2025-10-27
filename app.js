@@ -280,17 +280,77 @@ joinRoomBtn.addEventListener('click', async () => {
         // Generate a unique ID for ourselves (different from target room)
         const myId = generateRoomId();
         displayRoomId.textContent = 'Joining: ' + targetRoomId;
+        remotePeerId = targetRoomId; // Store the target room ID
         
-        initializePeer(myId, false);
-        
-        // Wait for peer to be ready, then call the target room
-        setTimeout(() => {
-            if (peer && peer.open) {
-                callPeer(targetRoomId);
-            } else {
-                status.textContent = '❌ Connection failed. Please try again.';
+        // Initialize peer with our own ID
+        peer = new Peer(myId, {
+            host: 'peerjs.com',
+            secure: true,
+            port: 443,
+            path: '/',
+            debug: 2,
+            config: {
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    { urls: 'stun:stun2.l.google.com:19302' }
+                ]
             }
-        }, 2000);
+        });
+
+        peer.on('open', (id) => {
+            myPeerId = id;
+            console.log('My peer ID:', id);
+            status.textContent = '🔄 Connected! Calling room...';
+            
+            // Call the target room
+            callPeer(targetRoomId);
+        });
+
+        peer.on('call', (call) => {
+            console.log('📞 Receiving return call from:', call.peer);
+            call.answer(localStream);
+            currentCall = call;
+
+            call.on('stream', (remoteStream) => {
+                console.log('📺 Received remote stream');
+                remoteVideo.srcObject = remoteStream;
+                remotePlaceholder.style.display = 'none';
+                status.textContent = '✅ Connected - Call in progress';
+            });
+
+            call.on('close', () => {
+                console.log('📴 Call ended by peer');
+                handleCallEnd();
+            });
+
+            call.on('error', (err) => {
+                console.error('❌ Call error:', err);
+                status.textContent = '❌ Call error: ' + err.type;
+            });
+        });
+
+        peer.on('error', (err) => {
+            console.error('❌ Peer error:', err);
+            if (err.type === 'peer-unavailable') {
+                status.textContent = '❌ Room not found. Check the Room ID or wait for host to be ready.';
+            } else {
+                status.textContent = '❌ Connection error: ' + err.type;
+            }
+        });
+
+        peer.on('disconnected', () => {
+            console.log('⚠️ Disconnected from server');
+            status.textContent = '⚠️ Disconnected. Attempting to reconnect...';
+            if (peer && !peer.destroyed) {
+                peer.reconnect();
+            }
+        });
+
+        peer.on('close', () => {
+            console.log('🔌 Connection closed');
+            status.textContent = '🔌 Connection closed';
+        });
     }
 });
 
