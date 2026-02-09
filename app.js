@@ -35,28 +35,19 @@ function initializePeer(roomId, isCreator = false) {
     
     console.log('Initializing peer with ID:', roomId);
     
+    // IMPORTANT: Use a secure key for production
     peer = new Peer(roomId, {
+        host: '0.peerjs.com',
+        port: 443,
+        secure: true,
         debug: 2,
         config: {
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
                 { urls: 'stun:stun1.l.google.com:19302' },
-                // Free TURN servers for NAT traversal
-                {
-                    urls: 'turn:openrelay.metered.ca:80',
-                    username: 'openrelayproject',
-                    credential: 'openrelayproject'
-                },
-                {
-                    urls: 'turn:openrelay.metered.ca:443',
-                    username: 'openrelayproject',
-                    credential: 'openrelayproject'
-                },
-                {
-                    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-                    username: 'openrelayproject',
-                    credential: 'openrelayproject'
-                }
+                { urls: 'stun:stun2.l.google.com:19302' },
+                { urls: 'stun:stun3.l.google.com:19302' },
+                { urls: 'stun:stun4.l.google.com:19302' }
             ]
         }
     });
@@ -89,98 +80,7 @@ function initializePeer(roomId, isCreator = false) {
         currentCall = call;
 
         call.on('stream', (remoteStream) => {
-            console.log('📺 Received remote stream');
-            console.log('Remote stream tracks:', remoteStream.getTracks());
-            
-            // Log detailed track info
-            remoteStream.getTracks().forEach((track, index) => {
-                console.log(`Track ${index}: kind=${track.kind}, enabled=${track.enabled}, muted=${track.muted}, readyState=${track.readyState}`);
-            });
-            
-            // CRITICAL FIX: Only set srcObject if it's not already set or if it's a different stream
-            // PeerJS can fire 'stream' event multiple times as tracks are added
-            if (!remoteVideo.srcObject || remoteVideo.srcObject.id !== remoteStream.id) {
-                console.log('🎬 Setting remote video source');
-                remoteVideo.srcObject = remoteStream;
-                
-                // Debug: Check video element state
-                console.log('Video element readyState:', remoteVideo.readyState);
-                console.log('Video element paused:', remoteVideo.paused);
-                console.log('Video element muted:', remoteVideo.muted);
-                
-                // CRITICAL: Wait for the video to have loaded metadata before playing
-                const attemptPlay = () => {
-                    console.log('🎬 Attempting to play video... readyState:', remoteVideo.readyState);
-                    const playPromise = remoteVideo.play();
-                    
-                    if (playPromise !== undefined) {
-                        playPromise.then(() => {
-                            console.log('✅ Remote video playing successfully!');
-                            console.log('Final video state - readyState:', remoteVideo.readyState, 'paused:', remoteVideo.paused);
-                            remotePlaceholder.style.display = 'none';
-                            status.textContent = '✅ Connected - Call in progress';
-                        }).catch(err => {
-                            console.error('❌ Error playing remote video:', err);
-                            console.error('Error name:', err.name, 'Error message:', err.message);
-                            
-                            // Try to play again with muted as fallback
-                            console.log('🔄 Attempting fallback: muted autoplay');
-                            remoteVideo.muted = true;
-                            remoteVideo.play().then(() => {
-                                console.log('✅ Playing with muted fallback (unmute manually)');
-                                remotePlaceholder.style.display = 'none';
-                                status.textContent = '✅ Connected - Unmute to hear audio';
-                            }).catch(err2 => {
-                                console.error('❌ Muted fallback also failed:', err2);
-                                remotePlaceholder.style.display = 'none';
-                                status.textContent = '⚠️ Connected - Click video to play';
-                            });
-                        });
-                    }
-                };
-                
-                // Wait for video metadata to be loaded
-                if (remoteVideo.readyState >= 2) { // HAVE_CURRENT_DATA or better
-                    console.log('✅ Video already has data, playing immediately');
-                    attemptPlay();
-                } else {
-                    console.log('⏳ Waiting for video metadata...');
-                    
-                    let metadataFired = false;
-                    
-                    remoteVideo.addEventListener('loadedmetadata', () => {
-                        console.log('✅ Video metadata loaded! ReadyState:', remoteVideo.readyState);
-                        metadataFired = true;
-                        attemptPlay();
-                    }, { once: true });
-                    
-                    // Fallback: also try when we have some data
-                    remoteVideo.addEventListener('loadeddata', () => {
-                        console.log('✅ Video data loaded! ReadyState:', remoteVideo.readyState);
-                        if (remoteVideo.paused && !metadataFired) {
-                            metadataFired = true;
-                            attemptPlay();
-                        }
-                    }, { once: true });
-                    
-                    // AGGRESSIVE TIMEOUT: Force play after 2 seconds regardless
-                    setTimeout(() => {
-                        if (!metadataFired && remoteVideo.paused) {
-                            console.warn('⚠️ Metadata timeout! Force playing anyway. ReadyState:', remoteVideo.readyState);
-                            console.log('Stream tracks at timeout:', remoteStream.getTracks().map(t => `${t.kind}:${t.readyState}`));
-                            attemptPlay();
-                            remotePlaceholder.style.display = 'none'; // Hide placeholder anyway
-                        }
-                    }, 2000);
-                }
-            } else {
-                console.log('⏭️ Skipping duplicate stream event (same stream already set)');
-                // Ensure placeholder is hidden even on duplicate events
-                if (remotePlaceholder.style.display !== 'none') {
-                    remotePlaceholder.style.display = 'none';
-                }
-                status.textContent = '✅ Connected - Call in progress';
-            }
+            handleRemoteStream(remoteStream);
         });
 
         call.on('close', () => {
@@ -239,27 +139,34 @@ async function initializeMedia() {
     try {
         status.textContent = '📹 Requesting camera and microphone access...';
         
-        localStream = await navigator.mediaDevices.getUserMedia({
+        // Request media with specific constraints
+        const constraints = {
             video: {
-                width: { ideal: 1280 },
-                height: { ideal: 720 },
+                width: { ideal: 640 },
+                height: { ideal: 480 },
+                frameRate: { ideal: 30 },
                 facingMode: 'user'
             },
             audio: {
                 echoCancellation: true,
                 noiseSuppression: true,
-                autoGainControl: true
+                autoGainControl: true,
+                sampleRate: 44100,
+                channelCount: 2
             }
-        });
+        };
         
+        localStream = await navigator.mediaDevices.getUserMedia(constraints);
+        
+        // Set up local video
         localVideo.srcObject = localStream;
         
-        // Ensure local video plays
+        // Play local video immediately (it's muted so no restrictions)
         await localVideo.play();
         
         status.textContent = '✅ Media ready';
         console.log('✅ Media devices initialized');
-        console.log('Local stream tracks:', localStream.getTracks());
+        console.log('Local stream tracks:', localStream.getTracks().map(t => `${t.kind}:${t.enabled}`));
         return true;
     } catch (err) {
         console.error('❌ Error accessing media devices:', err);
@@ -270,12 +177,223 @@ async function initializeMedia() {
         } else if (err.name === 'NotFoundError') {
             status.textContent = '❌ No camera or microphone found.';
             alert('No camera or microphone detected. Please connect one and try again.');
+        } else if (err.name === 'NotReadableError') {
+            status.textContent = '❌ Device is already in use by another application.';
+            alert('Your camera/microphone is being used by another application. Please close it and try again.');
         } else {
             status.textContent = '❌ Error: Could not access camera/microphone';
             alert('Error accessing media devices: ' + err.message);
         }
         return false;
     }
+}
+
+// Handle remote stream - centralized function
+function handleRemoteStream(remoteStream) {
+    console.log('📺 Received remote stream');
+    console.log('Remote stream tracks:', remoteStream.getTracks());
+    console.log('Remote stream active?', remoteStream.active);
+    
+    // Log detailed track info
+    remoteStream.getTracks().forEach((track, index) => {
+        console.log(`Track ${index}: kind=${track.kind}, enabled=${track.enabled}, muted=${track.muted}, readyState=${track.readyState}`);
+    });
+    
+    // CRITICAL: Clear any existing stream first
+    if (remoteVideo.srcObject) {
+        remoteVideo.srcObject.getTracks().forEach(track => track.stop());
+        remoteVideo.srcObject = null;
+    }
+    
+    // Set the new stream
+    remoteVideo.srcObject = remoteStream;
+    
+    // Debug: Check video element state
+    console.log('Video element readyState:', remoteVideo.readyState);
+    console.log('Video element paused:', remoteVideo.paused);
+    console.log('Video element muted:', remoteVideo.muted);
+    
+    // CRITICAL: Handle autoplay restrictions
+    const attemptPlay = () => {
+        console.log('🎬 Attempting to play video...');
+        
+        // IMPORTANT: Start with muted to bypass autoplay restrictions
+        remoteVideo.muted = true;
+        
+        const playPromise = remoteVideo.play();
+        
+        if (playPromise !== undefined) {
+            playPromise.then(() => {
+                console.log('✅ Remote video playing (muted)');
+                remotePlaceholder.style.display = 'none';
+                status.textContent = '✅ Connected - Click video to unmute';
+                
+                // Now try to unmute (user interaction required)
+                remoteVideo.addEventListener('click', unmuteRemoteVideo, { once: true });
+                
+            }).catch(err => {
+                console.error('❌ Error playing remote video (muted):', err);
+                
+                // Show play button overlay
+                showPlayButtonOverlay();
+                status.textContent = '⚠️ Click play button to start video';
+            });
+        }
+    };
+    
+    // Try to play immediately
+    attemptPlay();
+    
+    // Add loadedmetadata event listener
+    remoteVideo.addEventListener('loadedmetadata', () => {
+        console.log('✅ Video metadata loaded');
+    }, { once: true });
+    
+    // Fallback timeout
+    setTimeout(() => {
+        if (remoteVideo.paused && remotePlaceholder.style.display !== 'none') {
+            console.warn('⚠️ Video still not playing after timeout');
+            showPlayButtonOverlay();
+        }
+    }, 3000);
+}
+
+// Function to show play button overlay
+function showPlayButtonOverlay() {
+    // Create play button overlay if it doesn't exist
+    let playOverlay = document.getElementById('playOverlay');
+    if (!playOverlay) {
+        playOverlay = document.createElement('div');
+        playOverlay.id = 'playOverlay';
+        playOverlay.innerHTML = `
+            <button class="play-btn">
+                <svg fill="white" viewBox="0 0 24 24" width="64" height="64">
+                    <path d="M8 5v14l11-7z"/>
+                </svg>
+            </button>
+        `;
+        playOverlay.style.cssText = `
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+            border-radius: 10px;
+        `;
+        
+        // Style the play button
+        playOverlay.querySelector('.play-btn').style.cssText = `
+            background: rgba(59, 130, 246, 0.8);
+            border: none;
+            border-radius: 50%;
+            width: 80px;
+            height: 80px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.2s;
+        `;
+        
+        // Add hover effect
+        playOverlay.querySelector('.play-btn').addEventListener('mouseover', function() {
+            this.style.transform = 'scale(1.1)';
+        });
+        
+        playOverlay.querySelector('.play-btn').addEventListener('mouseout', function() {
+            this.style.transform = 'scale(1)';
+        });
+        
+        // Add click handler to play
+        playOverlay.querySelector('.play-btn').addEventListener('click', function(e) {
+            e.stopPropagation();
+            remoteVideo.muted = true; // Start muted
+            remoteVideo.play().then(() => {
+                console.log('✅ Video started via play button');
+                playOverlay.remove();
+                status.textContent = '✅ Connected - Click video to unmute';
+                remoteVideo.addEventListener('click', unmuteRemoteVideo, { once: true });
+            }).catch(err => {
+                console.error('❌ Still cannot play video:', err);
+            });
+        });
+        
+        // Add to video wrapper
+        const mainVideoDiv = document.querySelector('.main-video');
+        mainVideoDiv.style.position = 'relative';
+        mainVideoDiv.appendChild(playOverlay);
+    }
+}
+
+// Function to unmute remote video
+function unmuteRemoteVideo() {
+    console.log('🔊 Attempting to unmute remote video');
+    
+    // Try to unmute
+    remoteVideo.muted = false;
+    
+    // Create user gesture context
+    const playPromise = remoteVideo.play();
+    
+    if (playPromise !== undefined) {
+        playPromise.then(() => {
+            console.log('✅ Remote video unmuted and playing');
+            status.textContent = '✅ Connected - Call in progress';
+            
+            // Allow toggling mute
+            remoteVideo.addEventListener('click', () => {
+                remoteVideo.muted = !remoteVideo.muted;
+                console.log(remoteVideo.muted ? '🔇 Remote video muted' : '🔊 Remote video unmuted');
+            });
+            
+        }).catch(err => {
+            console.error('❌ Cannot unmute:', err);
+            
+            // Create unmute button
+            showUnmuteButton();
+        });
+    }
+}
+
+// Function to show unmute button
+function showUnmuteButton() {
+    const unmuteBtn = document.createElement('button');
+    unmuteBtn.textContent = '🔊 Click to Unmute';
+    unmuteBtn.style.cssText = `
+        position: absolute;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(59, 130, 246, 0.9);
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 20px;
+        cursor: pointer;
+        z-index: 11;
+        font-size: 14px;
+    `;
+    
+    unmuteBtn.onclick = function(e) {
+        e.stopPropagation();
+        remoteVideo.muted = false;
+        remoteVideo.play().then(() => {
+            console.log('✅ Unmuted via button');
+            unmuteBtn.remove();
+            status.textContent = '✅ Connected - Call in progress';
+        }).catch(err => {
+            console.error('Still cannot unmute:', err);
+        });
+    };
+    
+    // Add to video wrapper
+    const mainVideoDiv = document.querySelector('.main-video');
+    mainVideoDiv.appendChild(unmuteBtn);
 }
 
 // Make a call to another peer
@@ -296,99 +414,7 @@ function callPeer(remotePeerId) {
             currentCall = call;
 
             call.on('stream', (remoteStream) => {
-                console.log('📺 Received remote stream');
-                console.log('Remote stream tracks:', remoteStream.getTracks());
-                console.log('Remote stream active?', remoteStream.active);
-                
-                // Log detailed track info
-                remoteStream.getTracks().forEach((track, index) => {
-                    console.log(`Track ${index}: kind=${track.kind}, enabled=${track.enabled}, muted=${track.muted}, readyState=${track.readyState}`);
-                });
-                
-                // CRITICAL FIX: Only set srcObject if it's not already set or if it's a different stream
-                // PeerJS can fire 'stream' event multiple times as tracks are added
-                if (!remoteVideo.srcObject || remoteVideo.srcObject.id !== remoteStream.id) {
-                    console.log('🎬 Setting remote video source');
-                    remoteVideo.srcObject = remoteStream;
-                    
-                    // Debug: Check video element state
-                    console.log('Video element readyState:', remoteVideo.readyState);
-                    console.log('Video element paused:', remoteVideo.paused);
-                    console.log('Video element muted:', remoteVideo.muted);
-                    
-                    // CRITICAL: Wait for the video to have loaded metadata before playing
-                    const attemptPlay = () => {
-                        console.log('🎬 Attempting to play video... readyState:', remoteVideo.readyState);
-                        const playPromise = remoteVideo.play();
-                        
-                        if (playPromise !== undefined) {
-                            playPromise.then(() => {
-                                console.log('✅ Remote video playing successfully!');
-                                console.log('Final video state - readyState:', remoteVideo.readyState, 'paused:', remoteVideo.paused);
-                                remotePlaceholder.style.display = 'none';
-                                status.textContent = '✅ Connected - Call in progress';
-                            }).catch(err => {
-                                console.error('❌ Error playing remote video:', err);
-                                console.error('Error name:', err.name, 'Error message:', err.message);
-                                
-                                // Try to play again with muted as fallback
-                                console.log('🔄 Attempting fallback: muted autoplay');
-                                remoteVideo.muted = true;
-                                remoteVideo.play().then(() => {
-                                    console.log('✅ Playing with muted fallback (unmute manually)');
-                                    remotePlaceholder.style.display = 'none';
-                                    status.textContent = '✅ Connected - Unmute to hear audio';
-                                }).catch(err2 => {
-                                    console.error('❌ Muted fallback also failed:', err2);
-                                    remotePlaceholder.style.display = 'none';
-                                    status.textContent = '⚠️ Connected - Click video to play';
-                                });
-                            });
-                        }
-                    };
-                    
-                    // Wait for video metadata to be loaded
-                    if (remoteVideo.readyState >= 2) { // HAVE_CURRENT_DATA or better
-                        console.log('✅ Video already has data, playing immediately');
-                        attemptPlay();
-                    } else {
-                        console.log('⏳ Waiting for video metadata...');
-                        
-                        let metadataFired = false;
-                        
-                        remoteVideo.addEventListener('loadedmetadata', () => {
-                            console.log('✅ Video metadata loaded! ReadyState:', remoteVideo.readyState);
-                            metadataFired = true;
-                            attemptPlay();
-                        }, { once: true });
-                        
-                        // Fallback: also try when we have some data
-                        remoteVideo.addEventListener('loadeddata', () => {
-                            console.log('✅ Video data loaded! ReadyState:', remoteVideo.readyState);
-                            if (remoteVideo.paused && !metadataFired) {
-                                metadataFired = true;
-                                attemptPlay();
-                            }
-                        }, { once: true });
-                        
-                        // AGGRESSIVE TIMEOUT: Force play after 2 seconds regardless
-                        setTimeout(() => {
-                            if (!metadataFired && remoteVideo.paused) {
-                                console.warn('⚠️ Metadata timeout! Force playing anyway. ReadyState:', remoteVideo.readyState);
-                                console.log('Stream tracks at timeout:', remoteStream.getTracks().map(t => `${t.kind}:${t.readyState}`));
-                                attemptPlay();
-                                remotePlaceholder.style.display = 'none'; // Hide placeholder anyway
-                            }
-                        }, 2000);
-                    }
-                } else {
-                    console.log('⏭️ Skipping duplicate stream event (same stream already set)');
-                    // Ensure placeholder is hidden even on duplicate events
-                    if (remotePlaceholder.style.display !== 'none') {
-                        remotePlaceholder.style.display = 'none';
-                    }
-                    status.textContent = '✅ Connected - Call in progress';
-                }
+                handleRemoteStream(remoteStream);
             });
 
             call.on('close', () => {
@@ -413,10 +439,21 @@ function callPeer(remotePeerId) {
 
 // Handle call end
 function handleCallEnd() {
+    // Clear any overlays
+    const playOverlay = document.getElementById('playOverlay');
+    if (playOverlay) playOverlay.remove();
+    
+    // Stop and clear remote stream
     if (remoteVideo.srcObject) {
         remoteVideo.srcObject.getTracks().forEach(track => track.stop());
         remoteVideo.srcObject = null;
     }
+    
+    // Reset remote video
+    remoteVideo.muted = false;
+    remoteVideo.pause();
+    
+    // Show placeholder
     remotePlaceholder.style.display = 'flex';
     status.textContent = '📴 Call ended. Waiting for reconnection...';
     currentCall = null;
@@ -424,26 +461,42 @@ function handleCallEnd() {
 
 // Show join screen
 function showJoinScreen() {
+    // Clear any overlays
+    const playOverlay = document.getElementById('playOverlay');
+    if (playOverlay) playOverlay.remove();
+    
+    // Switch screens
     joinScreen.classList.remove('hidden');
     callScreen.classList.add('hidden');
     roomIdInput.value = '';
     
-    // Clean up
+    // Clean up media
     if (localStream) {
         localStream.getTracks().forEach(track => track.stop());
         localStream = null;
     }
+    
+    // Clean up video elements
+    localVideo.srcObject = null;
+    remoteVideo.srcObject = null;
+    remoteVideo.muted = false;
+    
+    // Clean up peer connection
     if (peer && !peer.destroyed) {
         peer.destroy();
         peer = null;
     }
+    
     if (currentCall) {
         currentCall.close();
         currentCall = null;
     }
     
+    // Reset controls
     audioEnabled = true;
     videoEnabled = true;
+    micBtn.classList.remove('active');
+    cameraBtn.classList.remove('active');
 }
 
 // Show call screen
@@ -452,7 +505,7 @@ function showCallScreen() {
     callScreen.classList.remove('hidden');
 }
 
-// Create room
+// Event Listeners
 createRoomBtn.addEventListener('click', async () => {
     console.log('🆕 Creating new room...');
     const roomId = generateRoomId();
@@ -468,7 +521,6 @@ createRoomBtn.addEventListener('click', async () => {
     }
 });
 
-// Join room
 joinRoomBtn.addEventListener('click', async () => {
     const targetRoomId = roomIdInput.value.trim().toUpperCase();
     
@@ -498,27 +550,17 @@ joinRoomBtn.addEventListener('click', async () => {
         
         // Initialize peer with our own ID
         peer = new Peer(myId, {
+            host: '0.peerjs.com',
+            port: 443,
+            secure: true,
             debug: 2,
             config: {
                 iceServers: [
                     { urls: 'stun:stun.l.google.com:19302' },
                     { urls: 'stun:stun1.l.google.com:19302' },
-                    // Free TURN servers for NAT traversal
-                    {
-                        urls: 'turn:openrelay.metered.ca:80',
-                        username: 'openrelayproject',
-                        credential: 'openrelayproject'
-                    },
-                    {
-                        urls: 'turn:openrelay.metered.ca:443',
-                        username: 'openrelayproject',
-                        credential: 'openrelayproject'
-                    },
-                    {
-                        urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-                        username: 'openrelayproject',
-                        credential: 'openrelayproject'
-                    }
+                    { urls: 'stun:stun2.l.google.com:19302' },
+                    { urls: 'stun:stun3.l.google.com:19302' },
+                    { urls: 'stun:stun4.l.google.com:19302' }
                 ]
             }
         });
@@ -531,10 +573,6 @@ joinRoomBtn.addEventListener('click', async () => {
             // Call the target room
             callPeer(targetRoomId);
         });
-
-        // Note: No peer.on('call') handler here for joiners
-        // The stream is handled in callPeer() above
-        // Only room creators need to handle incoming calls
 
         peer.on('error', (err) => {
             console.error('❌ Peer error:', err);
@@ -628,17 +666,7 @@ cameraBtn.addEventListener('click', () => {
 endBtn.addEventListener('click', endCall);
 
 function endCall() {
-    if (currentCall) {
-        currentCall.close();
-        currentCall = null;
-    }
-    
-    if (remoteVideo.srcObject) {
-        remoteVideo.srcObject = null;
-    }
-    
-    remotePlaceholder.style.display = 'flex';
-    status.textContent = '📴 Ending call...';
+    handleCallEnd();
     
     setTimeout(() => {
         showJoinScreen();
@@ -658,14 +686,3 @@ window.addEventListener('beforeunload', () => {
 // Debug: Log when DOM is ready
 console.log('✅ App.js loaded');
 console.log('displayRoomId element:', displayRoomId);
-
-// Add click handler to remote video to help with autoplay issues
-remoteVideo.addEventListener('click', () => {
-    if (remoteVideo.srcObject && remoteVideo.paused) {
-        remoteVideo.play().then(() => {
-            console.log('▶️ Remote video started playing after click');
-        }).catch(err => {
-            console.error('Failed to play video:', err);
-        });
-    }
-});
