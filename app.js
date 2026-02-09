@@ -78,7 +78,7 @@ function initializePeer(roomId, isCreator = false) {
             console.log('📺 Received remote stream');
             console.log('Remote stream tracks:', remoteStream.getTracks());
             
-            // CRITICAL FIX: Set the stream and ensure it plays
+            // Set the stream and ensure it plays
             remoteVideo.srcObject = remoteStream;
             
             // Force video to play
@@ -211,7 +211,7 @@ function callPeer(remotePeerId) {
                 console.log('Remote stream tracks:', remoteStream.getTracks());
                 console.log('Remote stream active?', remoteStream.active);
                 
-                // CRITICAL FIX: Set the stream and ensure it plays
+                // Set the stream and ensure it plays
                 remoteVideo.srcObject = remoteStream;
                 
                 // Force video to play
@@ -354,40 +354,9 @@ joinRoomBtn.addEventListener('click', async () => {
             callPeer(targetRoomId);
         });
 
-        peer.on('call', (call) => {
-            console.log('📞 Receiving return call from:', call.peer);
-            call.answer(localStream);
-            currentCall = call;
-
-            call.on('stream', (remoteStream) => {
-                console.log('📺 Received remote stream (return call)');
-                console.log('Remote stream tracks:', remoteStream.getTracks());
-                
-                // CRITICAL FIX: Set the stream and ensure it plays
-                remoteVideo.srcObject = remoteStream;
-                
-                // Force video to play
-                remoteVideo.play().then(() => {
-                    console.log('✅ Remote video playing');
-                    remotePlaceholder.style.display = 'none';
-                    status.textContent = '✅ Connected - Call in progress';
-                }).catch(err => {
-                    console.error('❌ Error playing remote video:', err);
-                    remotePlaceholder.style.display = 'none';
-                    status.textContent = '✅ Connected - Click video if it doesn\'t play';
-                });
-            });
-
-            call.on('close', () => {
-                console.log('📴 Call ended by peer');
-                handleCallEnd();
-            });
-
-            call.on('error', (err) => {
-                console.error('❌ Call error:', err);
-                status.textContent = '❌ Call error: ' + err.type;
-            });
-        });
+        // Note: No peer.on('call') handler here for joiners
+        // The stream is handled in callPeer() above
+        // Only room creators need to handle incoming calls
 
         peer.on('error', (err) => {
             console.error('❌ Peer error:', err);
