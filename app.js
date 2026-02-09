@@ -35,7 +35,6 @@ function initializePeer(roomId, isCreator = false) {
     
     console.log('Initializing peer with ID:', roomId);
     
-    // OPTION 1: Try with default cloud PeerJS server (simpler config)
     peer = new Peer(roomId, {
         debug: 2,
         config: {
@@ -64,12 +63,6 @@ function initializePeer(roomId, isCreator = false) {
             status.textContent = '✅ Room created! Share the Room ID to start calling';
         } else {
             status.textContent = '🔄 Connected! Attempting to call...';
-            // If joining, wait a bit then try to call
-            setTimeout(() => {
-                if (!currentCall) {
-                    status.textContent = '❌ Room not found or host not ready. Please check the Room ID.';
-                }
-            }, 5000);
         }
     });
 
@@ -83,9 +76,22 @@ function initializePeer(roomId, isCreator = false) {
 
         call.on('stream', (remoteStream) => {
             console.log('📺 Received remote stream');
+            console.log('Remote stream tracks:', remoteStream.getTracks());
+            
+            // CRITICAL FIX: Set the stream and ensure it plays
             remoteVideo.srcObject = remoteStream;
-            remotePlaceholder.style.display = 'none';
-            status.textContent = '✅ Connected - Call in progress';
+            
+            // Force video to play
+            remoteVideo.play().then(() => {
+                console.log('✅ Remote video playing');
+                remotePlaceholder.style.display = 'none';
+                status.textContent = '✅ Connected - Call in progress';
+            }).catch(err => {
+                console.error('❌ Error playing remote video:', err);
+                // Still hide placeholder even if autoplay fails
+                remotePlaceholder.style.display = 'none';
+                status.textContent = '✅ Connected - Click video if it doesn\'t play';
+            });
         });
 
         call.on('close', () => {
@@ -158,8 +164,13 @@ async function initializeMedia() {
         });
         
         localVideo.srcObject = localStream;
+        
+        // Ensure local video plays
+        await localVideo.play();
+        
         status.textContent = '✅ Media ready';
         console.log('✅ Media devices initialized');
+        console.log('Local stream tracks:', localStream.getTracks());
         return true;
     } catch (err) {
         console.error('❌ Error accessing media devices:', err);
@@ -197,9 +208,23 @@ function callPeer(remotePeerId) {
 
             call.on('stream', (remoteStream) => {
                 console.log('📺 Received remote stream');
+                console.log('Remote stream tracks:', remoteStream.getTracks());
+                console.log('Remote stream active?', remoteStream.active);
+                
+                // CRITICAL FIX: Set the stream and ensure it plays
                 remoteVideo.srcObject = remoteStream;
-                remotePlaceholder.style.display = 'none';
-                status.textContent = '✅ Connected - Call in progress';
+                
+                // Force video to play
+                remoteVideo.play().then(() => {
+                    console.log('✅ Remote video playing');
+                    remotePlaceholder.style.display = 'none';
+                    status.textContent = '✅ Connected - Call in progress';
+                }).catch(err => {
+                    console.error('❌ Error playing remote video:', err);
+                    // Still hide placeholder even if autoplay fails
+                    remotePlaceholder.style.display = 'none';
+                    status.textContent = '✅ Connected - Click video if it doesn\'t play';
+                });
             });
 
             call.on('close', () => {
@@ -335,10 +360,22 @@ joinRoomBtn.addEventListener('click', async () => {
             currentCall = call;
 
             call.on('stream', (remoteStream) => {
-                console.log('📺 Received remote stream');
+                console.log('📺 Received remote stream (return call)');
+                console.log('Remote stream tracks:', remoteStream.getTracks());
+                
+                // CRITICAL FIX: Set the stream and ensure it plays
                 remoteVideo.srcObject = remoteStream;
-                remotePlaceholder.style.display = 'none';
-                status.textContent = '✅ Connected - Call in progress';
+                
+                // Force video to play
+                remoteVideo.play().then(() => {
+                    console.log('✅ Remote video playing');
+                    remotePlaceholder.style.display = 'none';
+                    status.textContent = '✅ Connected - Call in progress';
+                }).catch(err => {
+                    console.error('❌ Error playing remote video:', err);
+                    remotePlaceholder.style.display = 'none';
+                    status.textContent = '✅ Connected - Click video if it doesn\'t play';
+                });
             });
 
             call.on('close', () => {
@@ -474,3 +511,14 @@ window.addEventListener('beforeunload', () => {
 // Debug: Log when DOM is ready
 console.log('✅ App.js loaded');
 console.log('displayRoomId element:', displayRoomId);
+
+// Add click handler to remote video to help with autoplay issues
+remoteVideo.addEventListener('click', () => {
+    if (remoteVideo.srcObject && remoteVideo.paused) {
+        remoteVideo.play().then(() => {
+            console.log('▶️ Remote video started playing after click');
+        }).catch(err => {
+            console.error('Failed to play video:', err);
+        });
+    }
+});
