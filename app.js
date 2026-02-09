@@ -103,32 +103,55 @@ function initializePeer(roomId, isCreator = false) {
                 console.log('Video element paused:', remoteVideo.paused);
                 console.log('Video element muted:', remoteVideo.muted);
                 
-                // Properly handle the play() Promise
-                const playPromise = remoteVideo.play();
-                
-                if (playPromise !== undefined) {
-                    playPromise.then(() => {
-                        console.log('✅ Remote video playing successfully!');
-                        console.log('Final video state - readyState:', remoteVideo.readyState, 'paused:', remoteVideo.paused);
-                        remotePlaceholder.style.display = 'none';
-                        status.textContent = '✅ Connected - Call in progress';
-                    }).catch(err => {
-                        console.error('❌ Error playing remote video:', err);
-                        console.error('Error name:', err.name, 'Error message:', err.message);
-                        
-                        // Try to play again with muted as fallback
-                        console.log('🔄 Attempting fallback: muted autoplay');
-                        remoteVideo.muted = true;
-                        remoteVideo.play().then(() => {
-                            console.log('✅ Playing with muted fallback (unmute manually)');
+                // CRITICAL: Wait for the video to have loaded metadata before playing
+                const attemptPlay = () => {
+                    console.log('🎬 Attempting to play video...');
+                    const playPromise = remoteVideo.play();
+                    
+                    if (playPromise !== undefined) {
+                        playPromise.then(() => {
+                            console.log('✅ Remote video playing successfully!');
+                            console.log('Final video state - readyState:', remoteVideo.readyState, 'paused:', remoteVideo.paused);
                             remotePlaceholder.style.display = 'none';
-                            status.textContent = '✅ Connected - Unmute to hear audio';
-                        }).catch(err2 => {
-                            console.error('❌ Muted fallback also failed:', err2);
-                            remotePlaceholder.style.display = 'none';
-                            status.textContent = '⚠️ Connected - Click video to play';
+                            status.textContent = '✅ Connected - Call in progress';
+                        }).catch(err => {
+                            console.error('❌ Error playing remote video:', err);
+                            console.error('Error name:', err.name, 'Error message:', err.message);
+                            
+                            // Try to play again with muted as fallback
+                            console.log('🔄 Attempting fallback: muted autoplay');
+                            remoteVideo.muted = true;
+                            remoteVideo.play().then(() => {
+                                console.log('✅ Playing with muted fallback (unmute manually)');
+                                remotePlaceholder.style.display = 'none';
+                                status.textContent = '✅ Connected - Unmute to hear audio';
+                            }).catch(err2 => {
+                                console.error('❌ Muted fallback also failed:', err2);
+                                remotePlaceholder.style.display = 'none';
+                                status.textContent = '⚠️ Connected - Click video to play';
+                            });
                         });
-                    });
+                    }
+                };
+                
+                // Wait for video metadata to be loaded
+                if (remoteVideo.readyState >= 2) { // HAVE_CURRENT_DATA or better
+                    console.log('✅ Video already has data, playing immediately');
+                    attemptPlay();
+                } else {
+                    console.log('⏳ Waiting for video metadata...');
+                    remoteVideo.addEventListener('loadedmetadata', () => {
+                        console.log('✅ Video metadata loaded! ReadyState:', remoteVideo.readyState);
+                        attemptPlay();
+                    }, { once: true });
+                    
+                    // Fallback: also try when we have some data
+                    remoteVideo.addEventListener('loadeddata', () => {
+                        console.log('✅ Video data loaded! ReadyState:', remoteVideo.readyState);
+                        if (remoteVideo.paused) {
+                            attemptPlay();
+                        }
+                    }, { once: true });
                 }
             } else {
                 console.log('⏭️ Skipping duplicate stream event (same stream already set)');
@@ -268,32 +291,55 @@ function callPeer(remotePeerId) {
                     console.log('Video element paused:', remoteVideo.paused);
                     console.log('Video element muted:', remoteVideo.muted);
                     
-                    // Properly handle the play() Promise
-                    const playPromise = remoteVideo.play();
-                    
-                    if (playPromise !== undefined) {
-                        playPromise.then(() => {
-                            console.log('✅ Remote video playing successfully!');
-                            console.log('Final video state - readyState:', remoteVideo.readyState, 'paused:', remoteVideo.paused);
-                            remotePlaceholder.style.display = 'none';
-                            status.textContent = '✅ Connected - Call in progress';
-                        }).catch(err => {
-                            console.error('❌ Error playing remote video:', err);
-                            console.error('Error name:', err.name, 'Error message:', err.message);
-                            
-                            // Try to play again with muted as fallback
-                            console.log('🔄 Attempting fallback: muted autoplay');
-                            remoteVideo.muted = true;
-                            remoteVideo.play().then(() => {
-                                console.log('✅ Playing with muted fallback (unmute manually)');
+                    // CRITICAL: Wait for the video to have loaded metadata before playing
+                    const attemptPlay = () => {
+                        console.log('🎬 Attempting to play video...');
+                        const playPromise = remoteVideo.play();
+                        
+                        if (playPromise !== undefined) {
+                            playPromise.then(() => {
+                                console.log('✅ Remote video playing successfully!');
+                                console.log('Final video state - readyState:', remoteVideo.readyState, 'paused:', remoteVideo.paused);
                                 remotePlaceholder.style.display = 'none';
-                                status.textContent = '✅ Connected - Unmute to hear audio';
-                            }).catch(err2 => {
-                                console.error('❌ Muted fallback also failed:', err2);
-                                remotePlaceholder.style.display = 'none';
-                                status.textContent = '⚠️ Connected - Click video to play';
+                                status.textContent = '✅ Connected - Call in progress';
+                            }).catch(err => {
+                                console.error('❌ Error playing remote video:', err);
+                                console.error('Error name:', err.name, 'Error message:', err.message);
+                                
+                                // Try to play again with muted as fallback
+                                console.log('🔄 Attempting fallback: muted autoplay');
+                                remoteVideo.muted = true;
+                                remoteVideo.play().then(() => {
+                                    console.log('✅ Playing with muted fallback (unmute manually)');
+                                    remotePlaceholder.style.display = 'none';
+                                    status.textContent = '✅ Connected - Unmute to hear audio';
+                                }).catch(err2 => {
+                                    console.error('❌ Muted fallback also failed:', err2);
+                                    remotePlaceholder.style.display = 'none';
+                                    status.textContent = '⚠️ Connected - Click video to play';
+                                });
                             });
-                        });
+                        }
+                    };
+                    
+                    // Wait for video metadata to be loaded
+                    if (remoteVideo.readyState >= 2) { // HAVE_CURRENT_DATA or better
+                        console.log('✅ Video already has data, playing immediately');
+                        attemptPlay();
+                    } else {
+                        console.log('⏳ Waiting for video metadata...');
+                        remoteVideo.addEventListener('loadedmetadata', () => {
+                            console.log('✅ Video metadata loaded! ReadyState:', remoteVideo.readyState);
+                            attemptPlay();
+                        }, { once: true });
+                        
+                        // Fallback: also try when we have some data
+                        remoteVideo.addEventListener('loadeddata', () => {
+                            console.log('✅ Video data loaded! ReadyState:', remoteVideo.readyState);
+                            if (remoteVideo.paused) {
+                                attemptPlay();
+                            }
+                        }, { once: true });
                     }
                 } else {
                     console.log('⏭️ Skipping duplicate stream event (same stream already set)');
