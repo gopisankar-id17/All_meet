@@ -33,26 +33,32 @@ function generateRoomId() {
 function initializePeer(roomId, isCreator = false) {
     isInitiator = isCreator;
     
-    // Use the cloud PeerJS server
+    console.log('Initializing peer with ID:', roomId);
+    
+    // OPTION 1: Try with default cloud PeerJS server (simpler config)
     peer = new Peer(roomId, {
-        host: 'peerjs.com',
-        secure: true,
-        port: 443,
-        path: '/',
         debug: 2,
         config: {
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
                 { urls: 'stun:stun1.l.google.com:19302' },
-                { urls: 'stun:stun2.l.google.com:19302' }
+                { urls: 'stun:stun2.l.google.com:19302' },
+                { urls: 'stun:global.stun.twilio.com:3478' }
             ]
         }
     });
 
     peer.on('open', (id) => {
         myPeerId = id;
-        displayRoomId.textContent = id;
-        console.log('My peer ID:', id);
+        console.log('✅ Peer connection opened! My peer ID:', id);
+        
+        // Update the display
+        if (displayRoomId) {
+            displayRoomId.textContent = id;
+            console.log('✅ Updated displayRoomId to:', id);
+        } else {
+            console.error('❌ displayRoomId element not found!');
+        }
         
         if (isCreator) {
             status.textContent = '✅ Room created! Share the Room ID to start calling';
@@ -106,7 +112,9 @@ function initializePeer(roomId, isCreator = false) {
         } else if (err.type === 'network') {
             status.textContent = '❌ Network error. Check your internet connection.';
         } else if (err.type === 'server-error') {
-            status.textContent = '❌ Server error. Please try again in a moment.';
+            status.textContent = '❌ Server error. The PeerJS server might be down. Try again later.';
+        } else if (err.message && err.message.includes('Lost connection')) {
+            status.textContent = '❌ Server connection lost. The PeerJS cloud server may be down.';
         } else {
             status.textContent = '❌ Connection error: ' + err.type;
         }
@@ -118,8 +126,10 @@ function initializePeer(roomId, isCreator = false) {
         
         // Try to reconnect
         setTimeout(() => {
-            if (peer.destroyed) return;
-            peer.reconnect();
+            if (peer && !peer.destroyed) {
+                console.log('🔄 Attempting to reconnect...');
+                peer.reconnect();
+            }
         }, 2000);
     });
 
@@ -149,6 +159,7 @@ async function initializeMedia() {
         
         localVideo.srcObject = localStream;
         status.textContent = '✅ Media ready';
+        console.log('✅ Media devices initialized');
         return true;
     } catch (err) {
         console.error('❌ Error accessing media devices:', err);
@@ -254,18 +265,25 @@ function showCallScreen() {
 
 // Create room
 createRoomBtn.addEventListener('click', async () => {
+    console.log('🆕 Creating new room...');
     const roomId = generateRoomId();
+    console.log('Generated Room ID:', roomId);
+    
     const mediaReady = await initializeMedia();
     
     if (mediaReady) {
         showCallScreen();
         initializePeer(roomId, true);
+    } else {
+        console.error('❌ Media not ready, cannot create room');
     }
 });
 
 // Join room
 joinRoomBtn.addEventListener('click', async () => {
     const targetRoomId = roomIdInput.value.trim().toUpperCase();
+    
+    console.log('🚪 Attempting to join room:', targetRoomId);
     
     if (!targetRoomId) {
         alert('⚠️ Please enter a Room ID');
@@ -279,28 +297,32 @@ joinRoomBtn.addEventListener('click', async () => {
         
         // Generate a unique ID for ourselves (different from target room)
         const myId = generateRoomId();
-        displayRoomId.textContent = 'Joining: ' + targetRoomId;
-        remotePeerId = targetRoomId; // Store the target room ID
+        console.log('My ID:', myId, '| Target Room:', targetRoomId);
+        
+        // Update display to show we're joining
+        if (displayRoomId) {
+            displayRoomId.textContent = 'Joining: ' + targetRoomId;
+            console.log('✅ Updated display for joining');
+        }
+        
+        remotePeerId = targetRoomId;
         
         // Initialize peer with our own ID
         peer = new Peer(myId, {
-            host: 'peerjs.com',
-            secure: true,
-            port: 443,
-            path: '/',
             debug: 2,
             config: {
                 iceServers: [
                     { urls: 'stun:stun.l.google.com:19302' },
                     { urls: 'stun:stun1.l.google.com:19302' },
-                    { urls: 'stun:stun2.l.google.com:19302' }
+                    { urls: 'stun:stun2.l.google.com:19302' },
+                    { urls: 'stun:global.stun.twilio.com:3478' }
                 ]
             }
         });
 
         peer.on('open', (id) => {
             myPeerId = id;
-            console.log('My peer ID:', id);
+            console.log('✅ My peer ID:', id);
             status.textContent = '🔄 Connected! Calling room...';
             
             // Call the target room
@@ -334,6 +356,8 @@ joinRoomBtn.addEventListener('click', async () => {
             console.error('❌ Peer error:', err);
             if (err.type === 'peer-unavailable') {
                 status.textContent = '❌ Room not found. Check the Room ID or wait for host to be ready.';
+            } else if (err.message && err.message.includes('Lost connection')) {
+                status.textContent = '❌ Server connection lost. The PeerJS cloud server may be down.';
             } else {
                 status.textContent = '❌ Connection error: ' + err.type;
             }
@@ -364,7 +388,11 @@ roomIdInput.addEventListener('keypress', (e) => {
 // Copy room ID
 copyBtn.addEventListener('click', () => {
     const roomId = displayRoomId.textContent;
-    navigator.clipboard.writeText(roomId).then(() => {
+    
+    // Don't copy if it's the "Joining:" text
+    const actualRoomId = roomId.startsWith('Joining:') ? roomId.replace('Joining: ', '') : roomId;
+    
+    navigator.clipboard.writeText(actualRoomId).then(() => {
         const originalText = copyBtn.textContent;
         copyBtn.textContent = '✓ Copied!';
         copyBtn.style.background = 'rgba(34, 197, 94, 0.3)';
@@ -374,7 +402,7 @@ copyBtn.addEventListener('click', () => {
         }, 2000);
     }).catch(err => {
         console.error('Failed to copy:', err);
-        alert('Room ID: ' + roomId);
+        alert('Room ID: ' + actualRoomId);
     });
 });
 
@@ -442,3 +470,7 @@ window.addEventListener('beforeunload', () => {
         peer.destroy();
     }
 });
+
+// Debug: Log when DOM is ready
+console.log('✅ App.js loaded');
+console.log('displayRoomId element:', displayRoomId);
