@@ -92,6 +92,11 @@ function initializePeer(roomId, isCreator = false) {
             console.log('📺 Received remote stream');
             console.log('Remote stream tracks:', remoteStream.getTracks());
             
+            // Log detailed track info
+            remoteStream.getTracks().forEach((track, index) => {
+                console.log(`Track ${index}: kind=${track.kind}, enabled=${track.enabled}, muted=${track.muted}, readyState=${track.readyState}`);
+            });
+            
             // CRITICAL FIX: Only set srcObject if it's not already set or if it's a different stream
             // PeerJS can fire 'stream' event multiple times as tracks are added
             if (!remoteVideo.srcObject || remoteVideo.srcObject.id !== remoteStream.id) {
@@ -105,7 +110,7 @@ function initializePeer(roomId, isCreator = false) {
                 
                 // CRITICAL: Wait for the video to have loaded metadata before playing
                 const attemptPlay = () => {
-                    console.log('🎬 Attempting to play video...');
+                    console.log('🎬 Attempting to play video... readyState:', remoteVideo.readyState);
                     const playPromise = remoteVideo.play();
                     
                     if (playPromise !== undefined) {
@@ -140,18 +145,33 @@ function initializePeer(roomId, isCreator = false) {
                     attemptPlay();
                 } else {
                     console.log('⏳ Waiting for video metadata...');
+                    
+                    let metadataFired = false;
+                    
                     remoteVideo.addEventListener('loadedmetadata', () => {
                         console.log('✅ Video metadata loaded! ReadyState:', remoteVideo.readyState);
+                        metadataFired = true;
                         attemptPlay();
                     }, { once: true });
                     
                     // Fallback: also try when we have some data
                     remoteVideo.addEventListener('loadeddata', () => {
                         console.log('✅ Video data loaded! ReadyState:', remoteVideo.readyState);
-                        if (remoteVideo.paused) {
+                        if (remoteVideo.paused && !metadataFired) {
+                            metadataFired = true;
                             attemptPlay();
                         }
                     }, { once: true });
+                    
+                    // AGGRESSIVE TIMEOUT: Force play after 2 seconds regardless
+                    setTimeout(() => {
+                        if (!metadataFired && remoteVideo.paused) {
+                            console.warn('⚠️ Metadata timeout! Force playing anyway. ReadyState:', remoteVideo.readyState);
+                            console.log('Stream tracks at timeout:', remoteStream.getTracks().map(t => `${t.kind}:${t.readyState}`));
+                            attemptPlay();
+                            remotePlaceholder.style.display = 'none'; // Hide placeholder anyway
+                        }
+                    }, 2000);
                 }
             } else {
                 console.log('⏭️ Skipping duplicate stream event (same stream already set)');
@@ -280,6 +300,11 @@ function callPeer(remotePeerId) {
                 console.log('Remote stream tracks:', remoteStream.getTracks());
                 console.log('Remote stream active?', remoteStream.active);
                 
+                // Log detailed track info
+                remoteStream.getTracks().forEach((track, index) => {
+                    console.log(`Track ${index}: kind=${track.kind}, enabled=${track.enabled}, muted=${track.muted}, readyState=${track.readyState}`);
+                });
+                
                 // CRITICAL FIX: Only set srcObject if it's not already set or if it's a different stream
                 // PeerJS can fire 'stream' event multiple times as tracks are added
                 if (!remoteVideo.srcObject || remoteVideo.srcObject.id !== remoteStream.id) {
@@ -293,7 +318,7 @@ function callPeer(remotePeerId) {
                     
                     // CRITICAL: Wait for the video to have loaded metadata before playing
                     const attemptPlay = () => {
-                        console.log('🎬 Attempting to play video...');
+                        console.log('🎬 Attempting to play video... readyState:', remoteVideo.readyState);
                         const playPromise = remoteVideo.play();
                         
                         if (playPromise !== undefined) {
@@ -328,18 +353,33 @@ function callPeer(remotePeerId) {
                         attemptPlay();
                     } else {
                         console.log('⏳ Waiting for video metadata...');
+                        
+                        let metadataFired = false;
+                        
                         remoteVideo.addEventListener('loadedmetadata', () => {
                             console.log('✅ Video metadata loaded! ReadyState:', remoteVideo.readyState);
+                            metadataFired = true;
                             attemptPlay();
                         }, { once: true });
                         
                         // Fallback: also try when we have some data
                         remoteVideo.addEventListener('loadeddata', () => {
                             console.log('✅ Video data loaded! ReadyState:', remoteVideo.readyState);
-                            if (remoteVideo.paused) {
+                            if (remoteVideo.paused && !metadataFired) {
+                                metadataFired = true;
                                 attemptPlay();
                             }
                         }, { once: true });
+                        
+                        // AGGRESSIVE TIMEOUT: Force play after 2 seconds regardless
+                        setTimeout(() => {
+                            if (!metadataFired && remoteVideo.paused) {
+                                console.warn('⚠️ Metadata timeout! Force playing anyway. ReadyState:', remoteVideo.readyState);
+                                console.log('Stream tracks at timeout:', remoteStream.getTracks().map(t => `${t.kind}:${t.readyState}`));
+                                attemptPlay();
+                                remotePlaceholder.style.display = 'none'; // Hide placeholder anyway
+                            }
+                        }, 2000);
                     }
                 } else {
                     console.log('⏭️ Skipping duplicate stream event (same stream already set)');
