@@ -84,24 +84,44 @@ function initializePeer(roomId, isCreator = false) {
                 console.log('🎬 Setting remote video source');
                 remoteVideo.srcObject = remoteStream;
                 
+                // Debug: Check video element state
+                console.log('Video element readyState:', remoteVideo.readyState);
+                console.log('Video element paused:', remoteVideo.paused);
+                console.log('Video element muted:', remoteVideo.muted);
+                
                 // Properly handle the play() Promise
                 const playPromise = remoteVideo.play();
                 
                 if (playPromise !== undefined) {
                     playPromise.then(() => {
-                        console.log('✅ Remote video playing');
+                        console.log('✅ Remote video playing successfully!');
+                        console.log('Final video state - readyState:', remoteVideo.readyState, 'paused:', remoteVideo.paused);
                         remotePlaceholder.style.display = 'none';
                         status.textContent = '✅ Connected - Call in progress';
                     }).catch(err => {
                         console.error('❌ Error playing remote video:', err);
-                        // Still hide placeholder even if autoplay fails
-                        remotePlaceholder.style.display = 'none';
-                        status.textContent = '✅ Connected - Click video if it doesn\'t play';
+                        console.error('Error name:', err.name, 'Error message:', err.message);
+                        
+                        // Try to play again with muted as fallback
+                        console.log('🔄 Attempting fallback: muted autoplay');
+                        remoteVideo.muted = true;
+                        remoteVideo.play().then(() => {
+                            console.log('✅ Playing with muted fallback (unmute manually)');
+                            remotePlaceholder.style.display = 'none';
+                            status.textContent = '✅ Connected - Unmute to hear audio';
+                        }).catch(err2 => {
+                            console.error('❌ Muted fallback also failed:', err2);
+                            remotePlaceholder.style.display = 'none';
+                            status.textContent = '⚠️ Connected - Click video to play';
+                        });
                     });
                 }
             } else {
                 console.log('⏭️ Skipping duplicate stream event (same stream already set)');
-                remotePlaceholder.style.display = 'none';
+                // Ensure placeholder is hidden even on duplicate events
+                if (remotePlaceholder.style.display !== 'none') {
+                    remotePlaceholder.style.display = 'none';
+                }
                 status.textContent = '✅ Connected - Call in progress';
             }
         });
@@ -229,24 +249,44 @@ function callPeer(remotePeerId) {
                     console.log('🎬 Setting remote video source');
                     remoteVideo.srcObject = remoteStream;
                     
+                    // Debug: Check video element state
+                    console.log('Video element readyState:', remoteVideo.readyState);
+                    console.log('Video element paused:', remoteVideo.paused);
+                    console.log('Video element muted:', remoteVideo.muted);
+                    
                     // Properly handle the play() Promise
                     const playPromise = remoteVideo.play();
                     
                     if (playPromise !== undefined) {
                         playPromise.then(() => {
-                            console.log('✅ Remote video playing');
+                            console.log('✅ Remote video playing successfully!');
+                            console.log('Final video state - readyState:', remoteVideo.readyState, 'paused:', remoteVideo.paused);
                             remotePlaceholder.style.display = 'none';
                             status.textContent = '✅ Connected - Call in progress';
                         }).catch(err => {
                             console.error('❌ Error playing remote video:', err);
-                            // Still hide placeholder even if autoplay fails
-                            remotePlaceholder.style.display = 'none';
-                            status.textContent = '✅ Connected - Click video if it doesn\'t play';
+                            console.error('Error name:', err.name, 'Error message:', err.message);
+                            
+                            // Try to play again with muted as fallback
+                            console.log('🔄 Attempting fallback: muted autoplay');
+                            remoteVideo.muted = true;
+                            remoteVideo.play().then(() => {
+                                console.log('✅ Playing with muted fallback (unmute manually)');
+                                remotePlaceholder.style.display = 'none';
+                                status.textContent = '✅ Connected - Unmute to hear audio';
+                            }).catch(err2 => {
+                                console.error('❌ Muted fallback also failed:', err2);
+                                remotePlaceholder.style.display = 'none';
+                                status.textContent = '⚠️ Connected - Click video to play';
+                            });
                         });
                     }
                 } else {
                     console.log('⏭️ Skipping duplicate stream event (same stream already set)');
-                    remotePlaceholder.style.display = 'none';
+                    // Ensure placeholder is hidden even on duplicate events
+                    if (remotePlaceholder.style.display !== 'none') {
+                        remotePlaceholder.style.display = 'none';
+                    }
                     status.textContent = '✅ Connected - Call in progress';
                 }
             });
