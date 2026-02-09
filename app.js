@@ -78,20 +78,28 @@ function initializePeer(roomId, isCreator = false) {
             console.log('📺 Received remote stream');
             console.log('Remote stream tracks:', remoteStream.getTracks());
             
-            // Set the stream and ensure it plays
-            remoteVideo.srcObject = remoteStream;
-            
-            // Force video to play
-            remoteVideo.play().then(() => {
-                console.log('✅ Remote video playing');
+            // CRITICAL FIX: Only set srcObject if it's not already set or if it's a different stream
+            // PeerJS can fire 'stream' event multiple times as tracks are added
+            if (!remoteVideo.srcObject || remoteVideo.srcObject.id !== remoteStream.id) {
+                console.log('🎬 Setting remote video source');
+                remoteVideo.srcObject = remoteStream;
+                
+                // Force video to play
+                remoteVideo.play().then(() => {
+                    console.log('✅ Remote video playing');
+                    remotePlaceholder.style.display = 'none';
+                    status.textContent = '✅ Connected - Call in progress';
+                }).catch(err => {
+                    console.error('❌ Error playing remote video:', err);
+                    // Still hide placeholder even if autoplay fails
+                    remotePlaceholder.style.display = 'none';
+                    status.textContent = '✅ Connected - Click video if it doesn\'t play';
+                });
+            } else {
+                console.log('⏭️ Skipping duplicate stream event (same stream already set)');
                 remotePlaceholder.style.display = 'none';
                 status.textContent = '✅ Connected - Call in progress';
-            }).catch(err => {
-                console.error('❌ Error playing remote video:', err);
-                // Still hide placeholder even if autoplay fails
-                remotePlaceholder.style.display = 'none';
-                status.textContent = '✅ Connected - Click video if it doesn\'t play';
-            });
+            }
         });
 
         call.on('close', () => {
@@ -211,20 +219,28 @@ function callPeer(remotePeerId) {
                 console.log('Remote stream tracks:', remoteStream.getTracks());
                 console.log('Remote stream active?', remoteStream.active);
                 
-                // Set the stream and ensure it plays
-                remoteVideo.srcObject = remoteStream;
-                
-                // Force video to play
-                remoteVideo.play().then(() => {
-                    console.log('✅ Remote video playing');
+                // CRITICAL FIX: Only set srcObject if it's not already set or if it's a different stream
+                // PeerJS can fire 'stream' event multiple times as tracks are added
+                if (!remoteVideo.srcObject || remoteVideo.srcObject.id !== remoteStream.id) {
+                    console.log('🎬 Setting remote video source');
+                    remoteVideo.srcObject = remoteStream;
+                    
+                    // Force video to play
+                    remoteVideo.play().then(() => {
+                        console.log('✅ Remote video playing');
+                        remotePlaceholder.style.display = 'none';
+                        status.textContent = '✅ Connected - Call in progress';
+                    }).catch(err => {
+                        console.error('❌ Error playing remote video:', err);
+                        // Still hide placeholder even if autoplay fails
+                        remotePlaceholder.style.display = 'none';
+                        status.textContent = '✅ Connected - Click video if it doesn\'t play';
+                    });
+                } else {
+                    console.log('⏭️ Skipping duplicate stream event (same stream already set)');
                     remotePlaceholder.style.display = 'none';
                     status.textContent = '✅ Connected - Call in progress';
-                }).catch(err => {
-                    console.error('❌ Error playing remote video:', err);
-                    // Still hide placeholder even if autoplay fails
-                    remotePlaceholder.style.display = 'none';
-                    status.textContent = '✅ Connected - Click video if it doesn\'t play';
-                });
+                }
             });
 
             call.on('close', () => {
