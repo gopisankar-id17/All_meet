@@ -84,17 +84,21 @@ function initializePeer(roomId, isCreator = false) {
                 console.log('🎬 Setting remote video source');
                 remoteVideo.srcObject = remoteStream;
                 
-                // Force video to play
-                remoteVideo.play().then(() => {
-                    console.log('✅ Remote video playing');
-                    remotePlaceholder.style.display = 'none';
-                    status.textContent = '✅ Connected - Call in progress';
-                }).catch(err => {
-                    console.error('❌ Error playing remote video:', err);
-                    // Still hide placeholder even if autoplay fails
-                    remotePlaceholder.style.display = 'none';
-                    status.textContent = '✅ Connected - Click video if it doesn\'t play';
-                });
+                // Properly handle the play() Promise
+                const playPromise = remoteVideo.play();
+                
+                if (playPromise !== undefined) {
+                    playPromise.then(() => {
+                        console.log('✅ Remote video playing');
+                        remotePlaceholder.style.display = 'none';
+                        status.textContent = '✅ Connected - Call in progress';
+                    }).catch(err => {
+                        console.error('❌ Error playing remote video:', err);
+                        // Still hide placeholder even if autoplay fails
+                        remotePlaceholder.style.display = 'none';
+                        status.textContent = '✅ Connected - Click video if it doesn\'t play';
+                    });
+                }
             } else {
                 console.log('⏭️ Skipping duplicate stream event (same stream already set)');
                 remotePlaceholder.style.display = 'none';
@@ -225,17 +229,21 @@ function callPeer(remotePeerId) {
                     console.log('🎬 Setting remote video source');
                     remoteVideo.srcObject = remoteStream;
                     
-                    // Force video to play
-                    remoteVideo.play().then(() => {
-                        console.log('✅ Remote video playing');
-                        remotePlaceholder.style.display = 'none';
-                        status.textContent = '✅ Connected - Call in progress';
-                    }).catch(err => {
-                        console.error('❌ Error playing remote video:', err);
-                        // Still hide placeholder even if autoplay fails
-                        remotePlaceholder.style.display = 'none';
-                        status.textContent = '✅ Connected - Click video if it doesn\'t play';
-                    });
+                    // Properly handle the play() Promise
+                    const playPromise = remoteVideo.play();
+                    
+                    if (playPromise !== undefined) {
+                        playPromise.then(() => {
+                            console.log('✅ Remote video playing');
+                            remotePlaceholder.style.display = 'none';
+                            status.textContent = '✅ Connected - Call in progress';
+                        }).catch(err => {
+                            console.error('❌ Error playing remote video:', err);
+                            // Still hide placeholder even if autoplay fails
+                            remotePlaceholder.style.display = 'none';
+                            status.textContent = '✅ Connected - Click video if it doesn\'t play';
+                        });
+                    }
                 } else {
                     console.log('⏭️ Skipping duplicate stream event (same stream already set)');
                     remotePlaceholder.style.display = 'none';
