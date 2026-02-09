@@ -1,0 +1,33 @@
+version: "3.8"
+
+services:
+  peerjs-server:
+    image: peerjs/peerjs-server
+    container_name: peerjs-server
+    restart: always
+    ports:
+      - "9000:9000"
+    command: >
+      peerjs
+      --port 9000
+      --path /peerjs
+      --key peerjs
+    networks:
+      - webrtc-net
+
+  web:
+    image: nginx:alpine
+    container_name: webrtc-web
+    restart: always
+    ports:
+      - "8080:80"
+    volumes:
+      - ./public:/usr/share/nginx/html:ro
+    depends_on:
+      - peerjs-server
+    networks:
+      - webrtc-net
+
+networks:
+  webrtc-net:
+    driver: bridge
